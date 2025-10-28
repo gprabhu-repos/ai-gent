@@ -98,11 +98,40 @@ function processWebhookPayload(payload) {
   // Add your lightweight processing logic here
   // Example: transform data, validate structure, etc.
 
+  const processingStartTime = Date.now();
+  const timestamp = new Date().toISOString();
+
+  // Generate a fun mood based on payload size or content
+  const moods = [
+    "Excited to help! 🎯",
+    "Ready to rock! 🚀",
+    "Feeling fantastic! ⭐",
+    "Powered up and ready! ⚡",
+    "In the zone! 🔥",
+    "Absolutely thrilled! 🎉"
+  ];
+
+  const randomMood = moods[Math.floor(Math.random() * moods.length)];
+
+  // Analyze the payload
+  const dataSize = JSON.stringify(payload).length;
+  const hasNestedData = typeof payload === 'object' && Object.keys(payload).length > 1;
+
   const processed = {
-    timestamp: new Date().toISOString(),
-    received: payload,
-    processed_at: Date.now(),
-    // Add your custom processing here
+    webhook_status: "✅ Successfully processed",
+    ai_agent: {
+      name: "AI-Gent v1.0",
+      mood: randomMood,
+      processed_at: timestamp,
+      processing_time: `${Date.now() - processingStartTime}ms`
+    },
+    your_payload: payload,
+    data_analysis: {
+      size_bytes: dataSize,
+      complexity: hasNestedData ? "rich_data" : "simple_data",
+      quality: dataSize > 50 ? "excellent" : "good"
+    },
+    next_steps: "Ready for your next webhook! 🔥"
   };
 
   return processed;
@@ -175,12 +204,13 @@ export default async function handler(req, res) {
     // Process the webhook payload
     const processed = processWebhookPayload(payload);
 
-    // Return success response
+    // Return success response with jazzy format
     return res.status(200).json({
-      success: true,
-      message: 'Webhook processed successfully',
-      data: processed,
-      requestId: requestId || 'none'
+      ...processed,
+      request_tracking: {
+        id: requestId || 'auto-generated',
+        origin: origin || 'unknown'
+      }
     });
 
   } catch (error) {
