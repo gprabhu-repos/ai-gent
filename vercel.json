@@ -1,0 +1,22 @@
+{
+  "functions": {
+    "api/webhook.js": {
+      "maxDuration": 10
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/webhook",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization, X-Webhook-ID, X-Request-ID"
+        }
+      ]
+    }
+  ]
+}

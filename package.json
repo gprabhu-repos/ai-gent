@@ -1,0 +1,17 @@
+{
+  "name": "ai-gent-webhook",
+  "version": "1.0.0",
+  "description": "Webhook agent with whitelisting and lightweight processing",
+  "main": "api/webhook.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
