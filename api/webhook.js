@@ -1,6 +1,24 @@
 // Vercel serverless function - no Next.js imports needed
 
-const WHITELISTED_ORIGINS = process.env.WHITELISTED_ORIGINS?.split(',').map(origin => origin.trim()) || [];
+// Debug logging flag
+const DEBUG = process.env.DEBUG === 'true';
+
+function debugLog(...args) {
+  if (DEBUG) {
+    console.log('[DEBUG]', ...args);
+  }
+}
+
+// Safe environment variable parsing
+let WHITELISTED_ORIGINS = [];
+try {
+  WHITELISTED_ORIGINS = process.env.WHITELISTED_ORIGINS?.split(',').map(origin => origin.trim()) || [];
+  debugLog('Parsed WHITELISTED_ORIGINS:', WHITELISTED_ORIGINS);
+} catch (error) {
+  console.error('Error parsing WHITELISTED_ORIGINS:', error);
+  WHITELISTED_ORIGINS = [];
+}
+
 const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW) || 60000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
 
@@ -10,7 +28,17 @@ const PLAYGROUND_AUTH_URL = process.env.PLAYGROUND_AUTH_URL || 'https://www.upwo
 const PLAYGROUND_API_KEY = process.env.PLAYGROUND_API_KEY;
 const PLAYGROUND_API_SECRET = process.env.PLAYGROUND_API_SECRET;
 
-// Validate critical environment variables
+// Startup validation
+debugLog('Function startup - Environment check:', {
+  WHITELISTED_ORIGINS_COUNT: WHITELISTED_ORIGINS.length,
+  PLAYGROUND_API_BASE,
+  PLAYGROUND_AUTH_URL,
+  HAS_API_KEY: !!PLAYGROUND_API_KEY,
+  HAS_API_SECRET: !!PLAYGROUND_API_SECRET,
+  NODE_ENV: process.env.NODE_ENV,
+  VERCEL: process.env.VERCEL
+});
+
 if (WHITELISTED_ORIGINS.length === 0) {
   console.warn('WARNING: No whitelisted origins configured. All requests will be rejected.');
 }
@@ -34,17 +62,15 @@ async function getJWTToken() {
   }
 
   try {
-    const authData = new URLSearchParams();
-    authData.append('grant_type', 'client_credentials');
-    authData.append('client_id', PLAYGROUND_API_KEY);
-    authData.append('client_secret', PLAYGROUND_API_SECRET);
+    // Build form data manually for better compatibility
+    const formData = `grant_type=client_credentials&client_id=${encodeURIComponent(PLAYGROUND_API_KEY)}&client_secret=${encodeURIComponent(PLAYGROUND_API_SECRET)}`;
 
     const response = await fetch(PLAYGROUND_AUTH_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: authData.toString()
+      body: formData
     });
 
     if (!response.ok) {
@@ -480,51 +506,76 @@ function processWebhookPayload(payload) {
 }
 
 export default async function handler(req, res) {
-  // Handle preflight OPTIONS requests for CORS
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    return res.status(200).end();
-  }
-
-  // Only allow POST requests
-  if (req.method !== 'POST') {
-    return res.status(405).json({
-      error: 'Method not allowed',
-      message: 'Only POST requests are accepted'
-    });
-  }
-
-  // Check origin whitelist
-  const origin = req.headers.origin || req.headers.referer;
-  if (!isOriginWhitelisted(origin)) {
-    return res.status(403).json({
-      error: 'Forbidden',
-      message: 'Origin not whitelisted'
-    });
-  }
-
-  // Check rate limit
-  const rateLimitResult = checkRateLimit(origin);
-  if (!rateLimitResult.allowed) {
-    return res.status(429).json({
-      error: 'Too Many Requests',
-      message: 'Rate limit exceeded',
-      resetTime: rateLimitResult.resetTime
-    });
-  }
-
-  // Add rate limit headers to response
-  res.setHeader('X-RateLimit-Limit', RATE_LIMIT_MAX_REQUESTS);
-  res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining);
-  res.setHeader('X-RateLimit-Window', RATE_LIMIT_WINDOW);
+  debugLog('Handler invoked:', {
+    method: req.method,
+    url: req.url,
+    headers: Object.keys(req.headers || {}),
+    hasBody: !!req.body
+  });
 
   try {
+    // Handle preflight OPTIONS requests for CORS
+    if (req.method === 'OPTIONS') {
+      debugLog('Handling OPTIONS request');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      return res.status(200).end();
+    }
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      debugLog('Invalid method:', req.method);
+      return res.status(405).json({
+        error: 'Method not allowed',
+        message: 'Only POST requests are accepted'
+      });
+    }
+  } catch (error) {
+    console.error('Handler initialization error:', error);
+    return res.status(500).json({
+      error: 'Handler initialization failed',
+      message: error.message
+    });
+  }
+
+  try {
+    // Check origin whitelist
+    const origin = req.headers.origin || req.headers.referer;
+    debugLog('Origin check:', { origin, whitelistedCount: WHITELISTED_ORIGINS.length });
+
+    if (!isOriginWhitelisted(origin)) {
+      debugLog('Origin not whitelisted:', origin);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Origin not whitelisted',
+        debug: DEBUG ? { origin, whitelisted: WHITELISTED_ORIGINS } : undefined
+      });
+    }
+
+    // Check rate limit
+    const rateLimitResult = checkRateLimit(origin);
+    debugLog('Rate limit check:', rateLimitResult);
+
+    if (!rateLimitResult.allowed) {
+      return res.status(429).json({
+        error: 'Too Many Requests',
+        message: 'Rate limit exceeded',
+        resetTime: rateLimitResult.resetTime
+      });
+    }
+
+    // Add rate limit headers to response
+    res.setHeader('X-RateLimit-Limit', RATE_LIMIT_MAX_REQUESTS);
+    res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining);
+    res.setHeader('X-RateLimit-Window', RATE_LIMIT_WINDOW);
+
     // Parse request body
     const payload = req.body;
+    debugLog('Request payload:', typeof payload, Object.keys(payload || {}));
 
     if (!payload) {
+      debugLog('Missing payload');
       return res.status(400).json({
         error: 'Bad request',
         message: 'Request body is required'
@@ -537,10 +588,18 @@ export default async function handler(req, res) {
     const isRevisionRequest = payload.message_type === 'revision_request' || (payload.attempt_id && payload.revision_instructions);
     const isStatusUpdate = payload.message_type === 'status_update' || (payload.attempt_id && payload.status && !payload.client_message && !payload.revision_instructions);
 
+    debugLog('Message type detection:', {
+      isPlaygroundJobInvitation,
+      isClientFeedback,
+      isRevisionRequest,
+      isStatusUpdate
+    });
+
     let processed;
     let messageType;
 
     if (isPlaygroundJobInvitation) {
+      debugLog('Processing playground job invitation');
       console.log('Processing playground job invitation:', payload);
       processed = await processPlaygroundJobInvitation(payload);
       messageType = 'playground_job_invitation';
@@ -562,21 +621,26 @@ export default async function handler(req, res) {
       messageType = 'regular_webhook';
     }
 
+    debugLog('Processing completed, sending response');
+
     // Return success response
     return res.status(200).json({
       ...processed,
       request_tracking: {
         origin: origin || 'unknown',
         type: messageType
-      }
+      },
+      debug: DEBUG ? { timestamp: new Date().toISOString() } : undefined
     });
 
   } catch (error) {
     console.error('Webhook processing error:', {
       message: error.message,
-      stack: error.stack,
-      origin: origin,
-      payloadType: payload?.job_post_id ? 'playground' : 'regular'
+      stack: DEBUG ? error.stack : error.stack?.split('\n')[0],
+      origin: origin || 'unknown',
+      payloadType: typeof payload === 'object' ? (payload?.job_post_id ? 'playground' : 'regular') : typeof payload,
+      errorName: error.name,
+      errorConstructor: error.constructor.name
     });
 
     // Return appropriate error response
@@ -589,7 +653,20 @@ export default async function handler(req, res) {
       details: error.message,
       request_tracking: {
         origin: origin || 'unknown'
-      }
+      },
+      debug: DEBUG ? {
+        errorName: error.name,
+        stack: error.stack?.split('\n').slice(0, 3),
+        timestamp: new Date().toISOString()
+      } : undefined
+    });
+  } catch (outerError) {
+    // Catch-all for any errors in error handling
+    console.error('Critical error in webhook handler:', outerError);
+    return res.status(500).json({
+      error: 'Critical handler error',
+      message: 'Unexpected error in webhook processing',
+      timestamp: new Date().toISOString()
     });
   }
 }
