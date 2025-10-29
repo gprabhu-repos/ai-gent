@@ -4,10 +4,11 @@ A simple webhook agent designed to receive playground job invitations and return
 
 ## Features
 
-- 🎯 **Playground Integration**: Handles job invitations with dummy responses
+- 🎯 **Playground Integration**: Complete job workflow with dummy responses
+- 🔄 **Iterative Support**: Handles client feedback, revisions, and status updates
 - 🔐 **Origin Whitelisting**: Only accepts requests from trusted domains
 - 🚦 **Rate Limiting**: Basic per-origin request limits
-- ⚡ **Simple Processing**: Lightweight job handling with placeholder responses
+- ⚡ **Smart Routing**: Automatic message type detection and processing
 - 🚀 **Vercel Ready**: Optimized for serverless deployment
 - 🔧 **Configurable**: Environment-based configuration
 
@@ -67,12 +68,42 @@ curl -X POST https://your-domain.vercel.app/api/webhook \
   }'
 ```
 
-### **Regular Webhook:**
+### **Client Feedback (Requesting Revision):**
 ```bash
 curl -X POST https://your-domain.vercel.app/api/webhook \
   -H "Content-Type: application/json" \
-  -H "Origin: https://trusted-domain.com" \
-  -d '{"event": "test", "data": {"key": "value"}}'
+  -H "Origin: https://playground.domain.com" \
+  -d '{
+    "message_type": "client_feedback",
+    "attempt_id": "attempt_789",
+    "client_message": "Great start! Can you add dark mode support?",
+    "requires_revision": true
+  }'
+```
+
+### **Explicit Revision Request:**
+```bash
+curl -X POST https://your-domain.vercel.app/api/webhook \
+  -H "Content-Type: application/json" \
+  -H "Origin: https://playground.domain.com" \
+  -d '{
+    "message_type": "revision_request",
+    "attempt_id": "attempt_789",
+    "revision_instructions": "Please make the buttons bigger and change colors to blue"
+  }'
+```
+
+### **Status Update:**
+```bash
+curl -X POST https://your-domain.vercel.app/api/webhook \
+  -H "Content-Type: application/json" \
+  -H "Origin: https://playground.domain.com" \
+  -d '{
+    "message_type": "status_update",
+    "attempt_id": "attempt_789",
+    "status": "approved",
+    "message": "Work has been approved by client"
+  }'
 ```
 
 **Headers:**
@@ -101,17 +132,59 @@ curl -X POST https://your-domain.vercel.app/api/webhook \
 }
 ```
 
-**Regular Webhook Success (200):**
+**Client Feedback (Revision) Response (200):**
 ```json
 {
-  "webhook_status": "✅ Regular webhook received",
+  "webhook_status": "✅ Client feedback received and revision submitted",
   "ai_agent": {
     "name": "AI-Gent v1.0",
-    "status": "ready",
+    "status": "revised",
     "processed_at": "2025-10-28T..."
   },
-  "received_payload": {...},
-  "message": "Non-playground webhook processed successfully"
+  "feedback_details": {
+    "attempt_id": "attempt_789",
+    "client_message": "Great start! Can you add dark mode support?",
+    "revision_id": "revision_456",
+    "requires_revision": true
+  },
+  "message": "Revision submitted based on client feedback"
+}
+```
+
+**Client Feedback (Acknowledge) Response (200):**
+```json
+{
+  "webhook_status": "✅ Client feedback acknowledged",
+  "ai_agent": {
+    "name": "AI-Gent v1.0",
+    "status": "acknowledged",
+    "processed_at": "2025-10-28T..."
+  },
+  "feedback_details": {
+    "attempt_id": "attempt_789",
+    "client_message": "Perfect! This looks great!",
+    "message_id": "msg_123",
+    "requires_revision": false
+  },
+  "message": "Client feedback acknowledged"
+}
+```
+
+**Revision Request Response (200):**
+```json
+{
+  "webhook_status": "✅ Revision request processed and submitted",
+  "ai_agent": {
+    "name": "AI-Gent v1.0",
+    "status": "revised",
+    "processed_at": "2025-10-28T..."
+  },
+  "revision_details": {
+    "attempt_id": "attempt_789",
+    "revision_instructions": "Make buttons bigger and blue",
+    "revision_id": "revision_789"
+  },
+  "message": "Revision completed and submitted"
 }
 ```
 
@@ -139,13 +212,33 @@ curl -X POST https://your-domain.vercel.app/api/webhook \
 
 ## Playground Integration
 
-### **Simple Job Workflow:**
+### **Complete Iterative Workflow:**
+
+**Initial Job Flow:**
 1. **Receive webhook** → `{job_post_id, agent_ids}`
 2. **Authenticate** → Get JWT token
 3. **Fetch job details** → Get job info
 4. **Create attempt** → Start job attempt
 5. **Submit dummy response** → Complete with placeholder
 6. **Return status** → Confirmation response
+
+**Client Feedback Flow:**
+1. **Receive feedback** → `{attempt_id, client_message, requires_revision}`
+2. **If revision needed** → Generate revision content + Submit via API
+3. **If acknowledgment** → Send thank you message
+4. **Return status** → Feedback processing confirmation
+
+**Revision Request Flow:**
+1. **Receive request** → `{attempt_id, revision_instructions}`
+2. **Generate revision** → Create updated content based on instructions
+3. **Submit revision** → Update attempt via API
+4. **Return status** → Revision completion confirmation
+
+### **Supported Message Types:**
+- **Job Invitation**: `job_post_id` + `agent_ids` → Initial job processing
+- **Client Feedback**: `attempt_id` + `client_message` → Handle client responses
+- **Revision Request**: `attempt_id` + `revision_instructions` → Process revision requests
+- **Status Update**: `attempt_id` + `status` → Acknowledge status changes
 
 ## Security
 

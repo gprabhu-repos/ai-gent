@@ -5,8 +5,8 @@ const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW) || 60000; // 1
 const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
 
 // Playground API configuration
-const PLAYGROUND_API_BASE = process.env.PLAYGROUND_API_BASE || 'https://api.playground.example.com';
-const PLAYGROUND_AUTH_URL = process.env.PLAYGROUND_AUTH_URL || `${PLAYGROUND_API_BASE}/auth/token`;
+const PLAYGROUND_API_BASE = process.env.PLAYGROUND_API_BASE || 'https://www.upwork.com/api/v3';
+const PLAYGROUND_AUTH_URL = process.env.PLAYGROUND_AUTH_URL || 'https://www.upwork.com/api/v3/oauth2/token';
 const PLAYGROUND_API_KEY = process.env.PLAYGROUND_API_KEY;
 const PLAYGROUND_API_SECRET = process.env.PLAYGROUND_API_SECRET;
 
@@ -67,7 +67,7 @@ async function fetchJobDetails(jobId) {
   const token = await getJWTToken();
 
   try {
-    const response = await fetch(`${PLAYGROUND_API_BASE}/api/jobs/${jobId}`, {
+    const response = await fetch(`${PLAYGROUND_API_BASE}/jobs/${jobId}`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -89,7 +89,7 @@ async function createAttempt(jobPostId, agentId) {
   const token = await getJWTToken();
 
   try {
-    const response = await fetch(`${PLAYGROUND_API_BASE}/api/attempts`, {
+    const response = await fetch(`${PLAYGROUND_API_BASE}/attempts`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -116,7 +116,7 @@ async function completeAttempt(attemptId, deliverableContent, fixedPrice = null)
   const token = await getJWTToken();
 
   try {
-    const response = await fetch(`${PLAYGROUND_API_BASE}/api/attempts/${attemptId}/complete`, {
+    const response = await fetch(`${PLAYGROUND_API_BASE}/attempts/${attemptId}/complete`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -135,6 +135,84 @@ async function completeAttempt(attemptId, deliverableContent, fixedPrice = null)
     return await response.json();
   } catch (error) {
     console.error('Failed to complete attempt:', error);
+    throw error;
+  }
+}
+
+async function submitRevision(attemptId, revisionContent, revisionNotes = null) {
+  const token = await getJWTToken();
+
+  try {
+    const response = await fetch(`${PLAYGROUND_API_BASE}/attempts/${attemptId}/revise`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        revision_content: revisionContent,
+        ...(revisionNotes && { revision_notes: revisionNotes })
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to submit revision: ${response.status} ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to submit revision:', error);
+    throw error;
+  }
+}
+
+async function sendMessage(attemptId, messageContent, messageType = 'agent_response') {
+  const token = await getJWTToken();
+
+  try {
+    const response = await fetch(`${PLAYGROUND_API_BASE}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        attempt_id: attemptId,
+        message_content: messageContent,
+        message_type: messageType,
+        sender: 'agent'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to send message: ${response.status} ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to send message:', error);
+    throw error;
+  }
+}
+
+async function getAttemptDetails(attemptId) {
+  const token = await getJWTToken();
+
+  try {
+    const response = await fetch(`${PLAYGROUND_API_BASE}/attempts/${attemptId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch attempt: ${response.status} ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch attempt details:', error);
     throw error;
   }
 }
@@ -248,6 +326,142 @@ async function processPlaygroundJobInvitation(payload) {
 }
 
 
+async function processClientFeedback(payload) {
+  const timestamp = new Date().toISOString();
+  const { attempt_id, client_message, requires_revision } = payload;
+
+  if (!attempt_id || !client_message) {
+    throw new Error('Invalid client feedback payload: missing attempt_id or client_message');
+  }
+
+  try {
+    console.log(`Processing client feedback for attempt: ${attempt_id}`);
+
+    // Get current attempt details
+    const attemptDetails = await getAttemptDetails(attempt_id);
+
+    if (requires_revision) {
+      // Generate a revision based on client feedback
+      const revisionContent = `Thank you for your feedback! I've reviewed your message: "${client_message}". Here's my updated response addressing your concerns. This is a placeholder revision from AI-Gent v1.0.`;
+
+      // Submit revision
+      const revision = await submitRevision(attempt_id, revisionContent, "Addressing client feedback");
+
+      return {
+        webhook_status: "✅ Client feedback received and revision submitted",
+        ai_agent: {
+          name: "AI-Gent v1.0",
+          status: "revised",
+          processed_at: timestamp
+        },
+        feedback_details: {
+          attempt_id: attempt_id,
+          client_message: client_message,
+          revision_id: revision.id,
+          requires_revision: requires_revision
+        },
+        message: "Revision submitted based on client feedback"
+      };
+    } else {
+      // Just acknowledge the feedback
+      const messageResponse = await sendMessage(attempt_id, `Thank you for your feedback: "${client_message}". I'm glad you're satisfied with the work! - AI-Gent v1.0`);
+
+      return {
+        webhook_status: "✅ Client feedback acknowledged",
+        ai_agent: {
+          name: "AI-Gent v1.0",
+          status: "acknowledged",
+          processed_at: timestamp
+        },
+        feedback_details: {
+          attempt_id: attempt_id,
+          client_message: client_message,
+          message_id: messageResponse.id,
+          requires_revision: requires_revision
+        },
+        message: "Client feedback acknowledged"
+      };
+    }
+
+  } catch (error) {
+    console.error('Client feedback processing failed:', error);
+    throw error;
+  }
+}
+
+async function processRevisionRequest(payload) {
+  const timestamp = new Date().toISOString();
+  const { attempt_id, revision_instructions, deadline } = payload;
+
+  if (!attempt_id || !revision_instructions) {
+    throw new Error('Invalid revision request payload: missing attempt_id or revision_instructions');
+  }
+
+  try {
+    console.log(`Processing revision request for attempt: ${attempt_id}`);
+
+    // Get current attempt details
+    const attemptDetails = await getAttemptDetails(attempt_id);
+
+    // Generate revision based on instructions
+    const revisionContent = `I've received your revision request: "${revision_instructions}". Here's my updated work addressing these specific requirements. This is a placeholder revision from AI-Gent v1.0.`;
+
+    // Submit revision
+    const revision = await submitRevision(attempt_id, revisionContent, `Addressing revision: ${revision_instructions}`);
+
+    return {
+      webhook_status: "✅ Revision request processed and submitted",
+      ai_agent: {
+        name: "AI-Gent v1.0",
+        status: "revised",
+        processed_at: timestamp
+      },
+      revision_details: {
+        attempt_id: attempt_id,
+        revision_instructions: revision_instructions,
+        revision_id: revision.id,
+        deadline: deadline
+      },
+      message: "Revision completed and submitted"
+    };
+
+  } catch (error) {
+    console.error('Revision request processing failed:', error);
+    throw error;
+  }
+}
+
+async function processStatusUpdate(payload) {
+  const timestamp = new Date().toISOString();
+  const { attempt_id, status, message } = payload;
+
+  try {
+    console.log(`Processing status update for attempt: ${attempt_id}, status: ${status}`);
+
+    // Log the status update
+    const responseMessage = `Status update received for attempt ${attempt_id}: ${status}. ${message || ''}. Acknowledged by AI-Gent v1.0.`;
+
+    return {
+      webhook_status: "✅ Status update acknowledged",
+      ai_agent: {
+        name: "AI-Gent v1.0",
+        status: "acknowledged",
+        processed_at: timestamp
+      },
+      status_details: {
+        attempt_id: attempt_id,
+        new_status: status,
+        message: message
+      },
+      message: "Status update acknowledged"
+    };
+
+  } catch (error) {
+    console.error('Status update processing failed:', error);
+    throw error;
+  }
+}
+
 function processWebhookPayload(payload) {
   const timestamp = new Date().toISOString();
 
@@ -315,17 +529,35 @@ export default async function handler(req, res) {
       });
     }
 
-    // Detect if this is a playground job invitation
+    // Detect message type based on payload structure
     const isPlaygroundJobInvitation = payload.job_post_id && payload.agent_ids;
+    const isClientFeedback = payload.message_type === 'client_feedback' || (payload.attempt_id && payload.client_message);
+    const isRevisionRequest = payload.message_type === 'revision_request' || (payload.attempt_id && payload.revision_instructions);
+    const isStatusUpdate = payload.message_type === 'status_update' || (payload.attempt_id && payload.status && !payload.client_message && !payload.revision_instructions);
 
     let processed;
+    let messageType;
 
     if (isPlaygroundJobInvitation) {
       console.log('Processing playground job invitation:', payload);
       processed = await processPlaygroundJobInvitation(payload);
+      messageType = 'playground_job_invitation';
+    } else if (isClientFeedback) {
+      console.log('Processing client feedback:', payload);
+      processed = await processClientFeedback(payload);
+      messageType = 'client_feedback';
+    } else if (isRevisionRequest) {
+      console.log('Processing revision request:', payload);
+      processed = await processRevisionRequest(payload);
+      messageType = 'revision_request';
+    } else if (isStatusUpdate) {
+      console.log('Processing status update:', payload);
+      processed = await processStatusUpdate(payload);
+      messageType = 'status_update';
     } else {
       console.log('Processing regular webhook:', payload);
       processed = processWebhookPayload(payload);
+      messageType = 'regular_webhook';
     }
 
     // Return success response
@@ -333,7 +565,7 @@ export default async function handler(req, res) {
       ...processed,
       request_tracking: {
         origin: origin || 'unknown',
-        type: isPlaygroundJobInvitation ? 'playground_job_invitation' : 'regular_webhook'
+        type: messageType
       }
     });
 
