@@ -14,7 +14,7 @@
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization, X-Webhook-ID, X-Request-ID"
+          "value": "Content-Type, Authorization"
         }
       ]
     }

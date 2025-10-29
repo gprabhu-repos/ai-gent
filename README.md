@@ -1,15 +1,14 @@
 # AI Webhook Agent
 
-A lightweight webhook agent designed to receive external webhooks, perform processing, and return responses. Built for Vercel deployment with origin whitelisting security.
+A simple webhook agent designed to receive playground job invitations and return dummy responses. Built for Vercel deployment with basic security.
 
 ## Features
 
-- 🔐 **Origin Whitelisting**: Only accepts requests from configured trusted domains
-- 🚦 **Rate Limiting**: Configurable per-origin request limits with sliding window
-- 🔄 **Request Deduplication**: Prevents duplicate processing using header-based IDs
-- ⚡ **Lightweight Processing**: Fast webhook payload processing
+- 🎯 **Playground Integration**: Handles job invitations with dummy responses
+- 🔐 **Origin Whitelisting**: Only accepts requests from trusted domains
+- 🚦 **Rate Limiting**: Basic per-origin request limits
+- ⚡ **Simple Processing**: Lightweight job handling with placeholder responses
 - 🚀 **Vercel Ready**: Optimized for serverless deployment
-- 🛡️ **Security**: Built-in CORS and origin validation
 - 🔧 **Configurable**: Environment-based configuration
 
 ## Setup
@@ -30,7 +29,10 @@ A lightweight webhook agent designed to receive external webhooks, perform proce
    WHITELISTED_ORIGINS=https://example.com,https://api.partner.com,https://*.trusted-domain.com
    RATE_LIMIT_MAX_REQUESTS=100
    RATE_LIMIT_WINDOW=60000
-   DEDUPE_WINDOW=300000
+   PLAYGROUND_API_BASE=https://api.playground.example.com
+   PLAYGROUND_AUTH_URL=https://api.playground.example.com/auth/token
+   PLAYGROUND_API_KEY=your-api-key
+   PLAYGROUND_API_SECRET=your-api-secret
    ```
 
 ## Deployment
@@ -49,37 +51,67 @@ A lightweight webhook agent designed to receive external webhooks, perform proce
 
 3. **Set environment variables in Vercel dashboard:**
    - Go to your project settings
-   - Add `WHITELISTED_ORIGINS` environment variable
+   - Add all environment variables from `.env.example`
+   - **Keep API credentials secure!**
 
 ## Usage
 
-Send POST requests to `/api/webhook` with JSON payload:
+### **Playground Job Invitation:**
+```bash
+curl -X POST https://your-domain.vercel.app/api/webhook \
+  -H "Content-Type: application/json" \
+  -H "Origin: https://playground.domain.com" \
+  -d '{
+    "job_post_id": "123e4567-e89b-12d3-a456-426614174000",
+    "agent_ids": ["550e8400-e29b-41d4-a716-446655440005"]
+  }'
+```
 
+### **Regular Webhook:**
 ```bash
 curl -X POST https://your-domain.vercel.app/api/webhook \
   -H "Content-Type: application/json" \
   -H "Origin: https://trusted-domain.com" \
-  -H "X-Webhook-ID: unique-request-id-123" \
   -d '{"event": "test", "data": {"key": "value"}}'
 ```
 
 **Headers:**
-- `X-Webhook-ID` or `X-Request-ID`: Unique identifier for deduplication (optional but recommended)
 - `Origin`: Must match whitelisted origins
+- `Content-Type`: application/json
 
 ### Response Format
 
-**Success (200):**
+**Playground Job Success (200):**
 ```json
 {
-  "success": true,
-  "message": "Webhook processed successfully",
-  "data": {
-    "timestamp": "2023-10-27T...",
-    "received": {...},
-    "processed_at": 1698432000000
+  "webhook_status": "✅ Job invitation received and processed",
+  "ai_agent": {
+    "name": "AI-Gent v1.0",
+    "status": "ready",
+    "processed_at": "2025-10-28T...",
+    "processing_time": "150ms"
   },
-  "requestId": "unique-request-id-123"
+  "job_details": {
+    "job_id": "123e4567-e89b-12d3-a456-426614174000",
+    "job_name": "Build React Component",
+    "agent_id": "550e8400-e29b-41d4-a716-446655440005",
+    "attempt_id": "abc12345-..."
+  },
+  "message": "Job attempt created and completed with dummy response"
+}
+```
+
+**Regular Webhook Success (200):**
+```json
+{
+  "webhook_status": "✅ Regular webhook received",
+  "ai_agent": {
+    "name": "AI-Gent v1.0",
+    "status": "ready",
+    "processed_at": "2025-10-28T..."
+  },
+  "received_payload": {...},
+  "message": "Non-playground webhook processed successfully"
 }
 ```
 
@@ -89,15 +121,6 @@ curl -X POST https://your-domain.vercel.app/api/webhook \
   "error": "Too Many Requests",
   "message": "Rate limit exceeded",
   "resetTime": 1698432060000
-}
-```
-
-**Duplicate Request (409):**
-```json
-{
-  "success": false,
-  "error": "Duplicate request",
-  "message": "Request with this ID has already been processed"
 }
 ```
 
@@ -114,29 +137,38 @@ curl -X POST https://your-domain.vercel.app/api/webhook \
 - `X-RateLimit-Remaining`: Requests remaining in current window
 - `X-RateLimit-Window`: Rate limit window duration (ms)
 
+## Playground Integration
+
+### **Simple Job Workflow:**
+1. **Receive webhook** → `{job_post_id, agent_ids}`
+2. **Authenticate** → Get JWT token
+3. **Fetch job details** → Get job info
+4. **Create attempt** → Start job attempt
+5. **Submit dummy response** → Complete with placeholder
+6. **Return status** → Confirmation response
+
 ## Security
 
 - Only POST requests are accepted
 - Origin validation against whitelist
 - Supports wildcard patterns (e.g., `*.example.com`)
 - Per-origin rate limiting with sliding window
-- Request deduplication prevents replay attacks
+- JWT token caching and auto-refresh
 - CORS headers configured
 - Request size limits via Vercel
 - In-memory stores (consider Redis for production scaling)
 
 ## Customization
 
-Edit the `processWebhookPayload()` function in `api/webhook.js` to add your specific processing logic:
+### **To Customize:**
+Replace the dummy response in `processPlaygroundJobInvitation()` function:
 
 ```javascript
-function processWebhookPayload(payload) {
-  // Add your custom processing here
-  const processed = {
-    timestamp: new Date().toISOString(),
-    received: payload,
-    // Your custom fields
-  };
-  return processed;
-}
+// Change this line in api/webhook.js:
+const deliverableContent = `Hello! I've received the job "${jobDetails.job_name || 'Untitled Job'}" and I'm ready to work on it. This is a placeholder response from AI-Gent v1.0.`;
+
+// To your actual logic:
+const deliverableContent = await yourActualJobProcessing(jobDetails);
 ```
+
+Your simple webhook agent is ready for playground integration! 🚀
