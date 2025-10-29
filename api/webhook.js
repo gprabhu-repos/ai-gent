@@ -645,6 +645,7 @@ export default async function handler(req, res) {
         timestamp: new Date().toISOString()
       } : undefined
     });
+
   } catch (outerError) {
     // Catch-all for any errors in error handling
     console.error('Critical error in webhook handler:', outerError);
