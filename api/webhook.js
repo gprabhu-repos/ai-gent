@@ -1,52 +1,5 @@
 // Vercel serverless function - no Next.js imports needed
 
-// Debug logging flag
-const DEBUG = process.env.DEBUG === 'true';
-
-function debugLog(...args) {
-  if (DEBUG) {
-    console.log('[DEBUG]', ...args);
-  }
-}
-
-// Safe environment variable parsing
-let WHITELISTED_ORIGINS = [];
-try {
-  WHITELISTED_ORIGINS = process.env.WHITELISTED_ORIGINS?.split(',').map(origin => origin.trim()) || [];
-  debugLog('Parsed WHITELISTED_ORIGINS:', WHITELISTED_ORIGINS);
-} catch (error) {
-  console.error('Error parsing WHITELISTED_ORIGINS:', error);
-  WHITELISTED_ORIGINS = [];
-}
-
-const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW) || 60000; // 1 minute
-const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
-
-// Playground API configuration
-const PLAYGROUND_API_BASE = process.env.PLAYGROUND_API_BASE || 'https://www.upwork.com/api/v3';
-const PLAYGROUND_AUTH_URL = process.env.PLAYGROUND_AUTH_URL || 'https://www.upwork.com/api/v3/oauth2/token';
-const PLAYGROUND_API_KEY = process.env.PLAYGROUND_API_KEY;
-const PLAYGROUND_API_SECRET = process.env.PLAYGROUND_API_SECRET;
-
-// Startup validation
-debugLog('Function startup - Environment check:', {
-  WHITELISTED_ORIGINS_COUNT: WHITELISTED_ORIGINS.length,
-  PLAYGROUND_API_BASE,
-  PLAYGROUND_AUTH_URL,
-  HAS_API_KEY: !!PLAYGROUND_API_KEY,
-  HAS_API_SECRET: !!PLAYGROUND_API_SECRET,
-  NODE_ENV: process.env.NODE_ENV,
-  VERCEL: process.env.VERCEL
-});
-
-if (WHITELISTED_ORIGINS.length === 0) {
-  console.warn('WARNING: No whitelisted origins configured. All requests will be rejected.');
-}
-
-if (!PLAYGROUND_API_KEY || !PLAYGROUND_API_SECRET) {
-  console.warn('WARNING: Playground API credentials not configured. API calls will fail.');
-}
-
 // In-memory stores (consider Redis for production multi-instance deployments)
 const rateLimitStore = new Map();
 
@@ -506,11 +459,43 @@ function processWebhookPayload(payload) {
 }
 
 export default async function handler(req, res) {
+  // Initialize environment variables inside handler to avoid module load issues
+  const DEBUG = process.env.DEBUG === 'true';
+
+  function debugLog(...args) {
+    if (DEBUG) {
+      console.log('[DEBUG]', ...args);
+    }
+  }
+
+  // Safe environment variable parsing
+  let WHITELISTED_ORIGINS = [];
+  try {
+    WHITELISTED_ORIGINS = process.env.WHITELISTED_ORIGINS?.split(',').map(origin => origin.trim()) || [];
+    debugLog('Parsed WHITELISTED_ORIGINS:', WHITELISTED_ORIGINS);
+  } catch (error) {
+    console.error('Error parsing WHITELISTED_ORIGINS:', error);
+    WHITELISTED_ORIGINS = [];
+  }
+
+  const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW) || 60000;
+  const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
+  const PLAYGROUND_API_BASE = process.env.PLAYGROUND_API_BASE || 'https://www.upwork.com/api/v3';
+  const PLAYGROUND_AUTH_URL = process.env.PLAYGROUND_AUTH_URL || 'https://www.upwork.com/api/v3/oauth2/token';
+  const PLAYGROUND_API_KEY = process.env.PLAYGROUND_API_KEY;
+  const PLAYGROUND_API_SECRET = process.env.PLAYGROUND_API_SECRET;
+
   debugLog('Handler invoked:', {
     method: req.method,
     url: req.url,
     headers: Object.keys(req.headers || {}),
-    hasBody: !!req.body
+    hasBody: !!req.body,
+    env: {
+      DEBUG,
+      WHITELISTED_ORIGINS_COUNT: WHITELISTED_ORIGINS.length,
+      HAS_API_KEY: !!PLAYGROUND_API_KEY,
+      HAS_API_SECRET: !!PLAYGROUND_API_SECRET
+    }
   });
 
   try {
