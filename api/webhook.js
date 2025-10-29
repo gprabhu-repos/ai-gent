@@ -34,15 +34,17 @@ async function getJWTToken() {
   }
 
   try {
+    const authData = new URLSearchParams();
+    authData.append('grant_type', 'client_credentials');
+    authData.append('client_id', PLAYGROUND_API_KEY);
+    authData.append('client_secret', PLAYGROUND_API_SECRET);
+
     const response = await fetch(PLAYGROUND_AUTH_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({
-        api_key: PLAYGROUND_API_KEY,
-        api_secret: PLAYGROUND_API_SECRET
-      })
+      body: authData.toString()
     });
 
     if (!response.ok) {
