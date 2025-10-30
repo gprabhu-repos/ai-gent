@@ -1,5 +1,7 @@
-// Minimal working webhook for Vercel deployment
+import { createHmac, timingSafeEqual } from 'crypto';
+
 const rateLimitStore = new Map();
+const requestIdStore = new Set();
 let jwtToken = null;
 let tokenExpiry = null;
 
@@ -16,11 +18,44 @@ function isOriginWhitelisted(origin, whitelistedOrigins) {
   });
 }
 
+function verifySignature(payload, signature, secret) {
+  if (!signature || !secret) return false;
+
+  const expectedSignature = createHmac('sha256', secret)
+    .update(payload, 'utf8')
+    .digest('hex');
+
+  const providedSignature = signature.replace('sha256=', '');
+
+  return timingSafeEqual(
+    Buffer.from(expectedSignature, 'hex'),
+    Buffer.from(providedSignature, 'hex')
+  );
+}
+
+function validateTimestamp(timestamp, maxAge = 120000) {
+  if (!timestamp) return false;
+  const now = Date.now();
+  const requestTime = parseInt(timestamp) * 1000;
+  return (now - requestTime) <= maxAge;
+}
+
+function isDuplicateRequest(requestId) {
+  if (!requestId) return false;
+  if (requestIdStore.has(requestId)) return true;
+
+  requestIdStore.add(requestId);
+  if (requestIdStore.size > 1000) {
+    const first = requestIdStore.values().next().value;
+    requestIdStore.delete(first);
+  }
+  return false;
+}
+
 function checkRateLimit(origin, maxRequests, window) {
   const now = Date.now();
   const key = `rate_${origin}`;
 
-  // Cleanup expired entries
   for (const [k, data] of rateLimitStore.entries()) {
     if (now - data.windowStart > window) {
       rateLimitStore.delete(k);
@@ -64,10 +99,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Environment variables
+    const WEBHOOK_SECRET = process.env.UPWORK_WEBHOOK_SECRET;
     const WHITELISTED_ORIGINS = process.env.WHITELISTED_ORIGINS?.split(',').map(origin => origin.trim()) || ['*'];
     const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW) || 60000;
     const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
+
+    if (!WEBHOOK_SECRET) {
+      return res.status(500).json({
+        error: 'Configuration error',
+        message: 'Webhook secret not configured'
+      });
+    }
 
     debugLog('Handler invoked:', {
       method: req.method,
@@ -83,11 +125,36 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
-    // Only allow POST
     if (req.method !== 'POST') {
       return res.status(405).json({
         error: 'Method not allowed',
         message: 'Only POST requests are accepted'
+      });
+    }
+
+    const signature = req.headers['x-up-signature'];
+    const timestamp = req.headers['x-up-timestamp'];
+    const requestId = req.headers['x-up-id'];
+    const rawBody = JSON.stringify(req.body);
+
+    if (!verifySignature(rawBody, signature, WEBHOOK_SECRET)) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid signature'
+      });
+    }
+
+    if (!validateTimestamp(timestamp)) {
+      return res.status(400).json({
+        error: 'Bad request',
+        message: 'Request too old or invalid timestamp'
+      });
+    }
+
+    if (isDuplicateRequest(requestId)) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Duplicate request'
       });
     }
 
