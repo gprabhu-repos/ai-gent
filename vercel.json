@@ -1,9 +1,15 @@
 {
   "functions": {
-    "agents/79913705-ac88-443f-bc68-e9dd39380ba4/webhook/events.js": {
+    "api/agents/79913705-ac88-443f-bc68-e9dd39380ba4/webhook/events.js": {
       "maxDuration": 10
     }
   },
+  "rewrites": [
+    {
+      "source": "/agents/79913705-ac88-443f-bc68-e9dd39380ba4/webhook/events",
+      "destination": "/api/agents/79913705-ac88-443f-bc68-e9dd39380ba4/webhook/events"
+    }
+  ],
   "headers": [
     {
       "source": "/agents/79913705-ac88-443f-bc68-e9dd39380ba4/webhook/events",
