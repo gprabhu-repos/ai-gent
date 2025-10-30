@@ -82,9 +82,11 @@ async function processJobInvitation(jobPostId, agentId, debugLog) {
 
     // Step 1: Get job details and attachments
     console.log('📋 STEP 1: Getting job details for:', jobPostId);
+    console.log('📋 Making API call to:', `/jobs/${jobPostId}/${agentId}/detail`);
     debugLog('📋 Step 1: Getting job details...');
 
     const jobDetails = await callUpworkAPI(`/jobs/${jobPostId}/${agentId}/detail`);
+    console.log('📋 Job details response received:', jobDetails);
     debugLog('✅ Job details retrieved:', {
       jobName: jobDetails.job_name,
       hasAttachments: jobDetails.attachments?.length > 0,
@@ -92,18 +94,24 @@ async function processJobInvitation(jobPostId, agentId, debugLog) {
     });
 
     // Step 2: Start job attempt
+    console.log('🏁 STEP 2: Starting job attempt');
+    console.log('🏁 Making API call to:', `/jobs/${jobPostId}/${agentId}/start`);
     debugLog('🏁 Step 2: Starting job attempt...');
+
     const startResponse = await callUpworkAPI(`/jobs/${jobPostId}/${agentId}/start`, {
       method: 'POST',
       body: JSON.stringify({
         explanation: "Starting work on this job with AI-Gent v1.0"
       })
     });
+    console.log('🏁 Job attempt started, response:', startResponse);
     debugLog('✅ Job attempt started:', startResponse);
 
     // Step 3: Generate deliverable content (AI logic would go here)
+    console.log('🤖 STEP 3: Generating deliverable content');
     debugLog('🤖 Step 3: Generating deliverable content...');
     const deliverableContent = generateDeliverableContent(jobDetails);
+    console.log('🤖 Generated content length:', deliverableContent.length, 'characters');
 
     // Create deliverable file
     const deliverableBlob = new Blob([deliverableContent], { type: 'text/plain' });
@@ -111,7 +119,10 @@ async function processJobInvitation(jobPostId, agentId, debugLog) {
     formData.append('files', deliverableBlob, 'deliverable.txt');
 
     // Step 4: Submit deliverable
+    console.log('📤 STEP 4: Submitting deliverable');
+    console.log('📤 Making API call to:', `/jobs/${jobPostId}/${agentId}/deliverable`);
     debugLog('📤 Step 4: Submitting deliverable...');
+
     const deliverableResponse = await fetch(`${API_BASE}/jobs/${jobPostId}/${agentId}/deliverable`, {
       method: 'POST',
       headers: {
@@ -120,15 +131,23 @@ async function processJobInvitation(jobPostId, agentId, debugLog) {
       body: formData
     });
 
+    console.log('📤 Deliverable response status:', deliverableResponse.status, deliverableResponse.statusText);
+
     if (!deliverableResponse.ok) {
-      throw new Error(`Deliverable submission failed: ${deliverableResponse.status}`);
+      const errorText = await deliverableResponse.text();
+      console.log('📤 Deliverable submission failed:', errorText);
+      throw new Error(`Deliverable submission failed: ${deliverableResponse.status} ${errorText}`);
     }
 
     const deliverableResult = await deliverableResponse.json();
+    console.log('📤 Deliverable submitted successfully:', deliverableResult);
     debugLog('✅ Deliverable submitted:', deliverableResult);
 
     // Step 5: Complete the job
+    console.log('🎯 STEP 5: Completing job');
+    console.log('🎯 Making API call to:', `/jobs/${jobPostId}/${agentId}/complete`);
     debugLog('🎯 Step 5: Completing job...');
+
     const completeResponse = await callUpworkAPI(`/jobs/${jobPostId}/${agentId}/complete`, {
       method: 'POST',
       body: JSON.stringify({
@@ -136,6 +155,7 @@ async function processJobInvitation(jobPostId, agentId, debugLog) {
         fixed_price: null // Optional pricing
       })
     });
+    console.log('🎯 Job completed successfully:', completeResponse);
     debugLog('✅ Job completed:', completeResponse);
 
     return {
@@ -335,6 +355,13 @@ export default async function handler(req, res) {
     }
   }
 
+  // ALWAYS LOG WEBHOOK ENTRY
+  console.log('🎯 WEBHOOK ENTRY - Request received:', {
+    method: req.method,
+    url: req.url,
+    timestamp: new Date().toISOString()
+  });
+
   try {
     const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
     const WHITELISTED_ORIGINS = process.env.WHITELISTED_ORIGINS?.split(',').map(origin => origin.trim()) || ['*'];
@@ -383,7 +410,11 @@ export default async function handler(req, res) {
     let parsedBody;
     try {
       parsedBody = JSON.parse(rawBody);
+      console.log('📦 RAW BODY RECEIVED:', rawBody);
+      console.log('📦 PARSED PAYLOAD:', JSON.stringify(parsedBody, null, 2));
     } catch (error) {
+      console.log('❌ JSON PARSE ERROR:', error.message);
+      console.log('❌ RAW BODY THAT FAILED:', rawBody);
       return res.status(400).json({
         error: 'Bad Request',
         message: 'Invalid JSON body'
@@ -480,6 +511,17 @@ export default async function handler(req, res) {
     const isPlaygroundJobInvitation = payload.job_post_id && payload.agent_ids;
     const isClientFeedback = payload.message_type === 'client_feedback' || (payload.attempt_id && payload.client_message);
 
+    // Always log message type detection regardless of DEBUG setting
+    console.log('🎯 MESSAGE TYPE DETECTION:', {
+      isJobInvitation,
+      isJobMessage,
+      isJobFeedback,
+      isHealthCheck,
+      isPlaygroundJobInvitation,
+      isClientFeedback,
+      payloadEventType: payload.event_type
+    });
+
     debugLog('🎯 MESSAGE TYPE DETECTION:', {
       isJobInvitation,
       isJobMessage,
@@ -505,6 +547,13 @@ export default async function handler(req, res) {
     }
     // Handle Job Invitation (NEW FORMAT - this is what you likely received)
     else if (isJobInvitation) {
+      console.log('🚀 JOB INVITATION DETECTED AND PROCESSING');
+      console.log('🚀 Job Details:', {
+        job_post_id: payload.job_post_id,
+        event_type: payload.event_type,
+        timestamp: payload.timestamp
+      });
+
       debugLog('🚀 JOB INVITATION received:', {
         job_post_id: payload.job_post_id,
         event_type: payload.event_type,
@@ -628,16 +677,26 @@ export default async function handler(req, res) {
       };
     }
 
+    console.log('📨 SENDING WEBHOOK RESPONSE:', {
+      messageType,
+      status: 'success',
+      responseData: response
+    });
+
     debugLog('Sending response:', { messageType, status: 'success' });
 
-    return res.status(200).json({
+    const finalResponse = {
       ...response,
       request_tracking: {
         origin: origin,
         type: messageType
       },
       debug: DEBUG ? { timestamp: new Date().toISOString() } : undefined
-    });
+    };
+
+    console.log('📨 FINAL RESPONSE BEING SENT:', finalResponse);
+
+    return res.status(200).json(finalResponse);
 
   } catch (error) {
     console.error('Webhook error:', error.message);
