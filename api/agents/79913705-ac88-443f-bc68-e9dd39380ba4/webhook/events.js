@@ -518,6 +518,9 @@ export default async function handler(req, res) {
         const agentId = '79913705-ac88-443f-bc68-e9dd39380ba4'; // Extract from route or config
 
         // Start job processing in background (don't await to respond quickly)
+        console.log('🚀 ABOUT TO START JOB PROCESSING - ALWAYS VISIBLE');
+        console.log('Job ID:', payload.job_post_id);
+        console.log('Agent ID:', agentId);
         debugLog('🚀 About to start job processing for:', { jobId: payload.job_post_id, agentId });
 
         processJobInvitation(payload.job_post_id, agentId, debugLog)
