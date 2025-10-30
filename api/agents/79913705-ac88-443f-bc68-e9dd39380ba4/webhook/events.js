@@ -20,12 +20,15 @@ function isOriginWhitelisted(origin, whitelistedOrigins) {
 
 function verifySignature(payload, signature, secret, debug = false) {
   if (debug) {
-    console.log('[SIGNATURE DEBUG]', {
-      hasSignature: !!signature,
-      hasSecret: !!secret,
-      secretLength: secret?.length,
-      signatureLength: signature?.length,
-      payloadLength: payload?.length
+    console.log('[SIGNATURE DEBUG] Input params:', {
+      payload: payload,
+      signature: signature,
+      secret: secret,
+      payloadType: typeof payload,
+      signatureType: typeof signature,
+      secretType: typeof secret,
+      payloadBytes: Buffer.from(payload, 'utf8').length,
+      payloadEncoding: Buffer.from(payload, 'utf8').toString('hex').substring(0, 32) + '...'
     });
   }
 
@@ -41,10 +44,17 @@ function verifySignature(payload, signature, secret, debug = false) {
   const providedSignature = signature.replace('sha256=', '');
 
   if (debug) {
-    console.log('[SIGNATURE DEBUG]', {
-      providedSignature: providedSignature.substring(0, 16) + '...',
-      expectedSignature: expectedSignature.substring(0, 16) + '...',
-      signaturesMatch: providedSignature === expectedSignature
+    console.log('[SIGNATURE DEBUG] Calculation:', {
+      originalSignature: signature,
+      providedSignature: providedSignature,
+      expectedSignature: expectedSignature,
+      providedLength: providedSignature.length,
+      expectedLength: expectedSignature.length,
+      signaturesMatch: providedSignature === expectedSignature,
+      hmacInput: {
+        secret: secret,
+        payload: payload
+      }
     });
   }
 
