@@ -1,12 +1,12 @@
 {
   "functions": {
-    "api/webhook.js": {
+    "agents/79913705-ac88-443f-bc68-e9dd39380ba4/webhook/events.js": {
       "maxDuration": 10
     }
   },
   "headers": [
     {
-      "source": "/api/webhook",
+      "source": "/agents/79913705-ac88-443f-bc68-e9dd39380ba4/webhook/events",
       "headers": [
         {
           "key": "Access-Control-Allow-Methods",
@@ -14,7 +14,7 @@
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization"
+          "value": "Content-Type, Authorization, X-Up-Signature, X-Up-Timestamp, X-Up-Id"
         }
       ]
     }
