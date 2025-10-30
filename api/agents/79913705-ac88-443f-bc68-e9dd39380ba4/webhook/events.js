@@ -18,7 +18,7 @@ function isOriginWhitelisted(origin, whitelistedOrigins) {
   });
 }
 
-function verifySignature(payload, signature, secret, debug = false) {
+function verifySignature(payload, signature, secret, timestamp = null, requestId = null, debug = false) {
   if (debug) {
     console.log('[SIGNATURE DEBUG] Input params:', {
       payload: payload,
@@ -37,24 +37,25 @@ function verifySignature(payload, signature, secret, debug = false) {
     return false;
   }
 
+  // According to Upwork docs: raw_payload = f"{x_up_id}.{x_up_timestamp}.{body_str}"
+  const upworkFormat = `${requestId}.${timestamp}.${payload}`;
+
+  if (debug) {
+    console.log('[SIGNATURE DEBUG] Upwork format payload:', upworkFormat);
+  }
+
   const expectedSignature = createHmac('sha256', secret)
-    .update(payload, 'utf8')
+    .update(upworkFormat, 'utf8')
     .digest('hex');
 
   const providedSignature = signature.replace('sha256=', '');
 
   if (debug) {
-    console.log('[SIGNATURE DEBUG] Calculation:', {
-      originalSignature: signature,
+    console.log('[SIGNATURE DEBUG] Final comparison:', {
       providedSignature: providedSignature,
       expectedSignature: expectedSignature,
-      providedLength: providedSignature.length,
-      expectedLength: expectedSignature.length,
       signaturesMatch: providedSignature === expectedSignature,
-      hmacInput: {
-        secret: secret,
-        payload: payload
-      }
+      upworkFormatUsed: upworkFormat
     });
   }
 
@@ -186,7 +187,7 @@ export default async function handler(req, res) {
       webhookSecretLength: WEBHOOK_SECRET?.length
     });
 
-    if (!verifySignature(rawBody, signature, WEBHOOK_SECRET, DEBUG)) {
+    if (!verifySignature(rawBody, signature, WEBHOOK_SECRET, timestamp, requestId, DEBUG)) {
       debugLog('Signature verification failed');
       return res.status(401).json({
         error: 'Unauthorized',
