@@ -18,14 +18,35 @@ function isOriginWhitelisted(origin, whitelistedOrigins) {
   });
 }
 
-function verifySignature(payload, signature, secret) {
-  if (!signature || !secret) return false;
+function verifySignature(payload, signature, secret, debug = false) {
+  if (debug) {
+    console.log('[SIGNATURE DEBUG]', {
+      hasSignature: !!signature,
+      hasSecret: !!secret,
+      secretLength: secret?.length,
+      signatureLength: signature?.length,
+      payloadLength: payload?.length
+    });
+  }
+
+  if (!signature || !secret) {
+    if (debug) console.log('[SIGNATURE DEBUG] Missing signature or secret');
+    return false;
+  }
 
   const expectedSignature = createHmac('sha256', secret)
     .update(payload, 'utf8')
     .digest('hex');
 
   const providedSignature = signature.replace('sha256=', '');
+
+  if (debug) {
+    console.log('[SIGNATURE DEBUG]', {
+      providedSignature: providedSignature.substring(0, 16) + '...',
+      expectedSignature: expectedSignature.substring(0, 16) + '...',
+      signaturesMatch: providedSignature === expectedSignature
+    });
+  }
 
   return timingSafeEqual(
     Buffer.from(expectedSignature, 'hex'),
@@ -137,7 +158,16 @@ export default async function handler(req, res) {
     const requestId = req.headers['x-up-id'];
     const rawBody = JSON.stringify(req.body);
 
-    if (!verifySignature(rawBody, signature, WEBHOOK_SECRET)) {
+    debugLog('Webhook headers:', {
+      signature: signature ? signature.substring(0, 20) + '...' : 'missing',
+      timestamp,
+      requestId,
+      hasWebhookSecret: !!WEBHOOK_SECRET,
+      webhookSecretLength: WEBHOOK_SECRET?.length
+    });
+
+    if (!verifySignature(rawBody, signature, WEBHOOK_SECRET, DEBUG)) {
+      debugLog('Signature verification failed');
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'Invalid signature'
