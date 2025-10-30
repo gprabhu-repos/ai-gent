@@ -157,20 +157,15 @@ export default async function handler(req, res) {
     const timestamp = req.headers['x-up-timestamp'];
     const requestId = req.headers['x-up-id'];
 
-    // Get raw body for signature verification
-    let rawBody;
-    if (req.rawBody) {
-      rawBody = req.rawBody;
-    } else if (typeof req.body === 'string') {
-      rawBody = req.body;
-    } else {
-      rawBody = JSON.stringify(req.body);
-    }
+    // For signature verification, we need the exact body Upwork sent
+    // Vercel parses JSON, so we reconstruct it consistently
+    const rawBody = JSON.stringify(req.body);
 
     debugLog('Body info:', {
-      hasRawBody: !!req.rawBody,
       bodyType: typeof req.body,
-      bodyLength: rawBody.length
+      bodyLength: rawBody.length,
+      bodyKeys: req.body ? Object.keys(req.body) : 'none',
+      rawBodySample: rawBody.substring(0, 100)
     });
 
     debugLog('Webhook headers:', {
