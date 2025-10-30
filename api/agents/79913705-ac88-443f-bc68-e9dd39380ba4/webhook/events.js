@@ -268,17 +268,105 @@ export default async function handler(req, res) {
       });
     }
 
-    // Simple message type detection
+    debugLog('🔍 PAYLOAD ANALYSIS:', {
+      payloadKeys: Object.keys(payload),
+      hasJobPostId: !!payload.job_post_id,
+      hasAgentIds: !!payload.agent_ids,
+      hasEventType: !!payload.event_type,
+      eventType: payload.event_type,
+      fullPayload: payload
+    });
+
+    // Enhanced message type detection based on Upwork documentation
+    const isJobInvitation = payload.event_type === 'agent.job.invitation';
+    const isJobMessage = payload.event_type === 'agent.job.message';
+    const isJobFeedback = payload.event_type === 'agent.job.feedback';
+    const isHealthCheck = payload.event_type === 'agent.health_check';
+
+    // Legacy detection for older payload formats
     const isPlaygroundJobInvitation = payload.job_post_id && payload.agent_ids;
     const isClientFeedback = payload.message_type === 'client_feedback' || (payload.attempt_id && payload.client_message);
+
+    debugLog('🎯 MESSAGE TYPE DETECTION:', {
+      isJobInvitation,
+      isJobMessage,
+      isJobFeedback,
+      isHealthCheck,
+      isPlaygroundJobInvitation,
+      isClientFeedback
+    });
 
     let messageType;
     let response;
 
-    if (isPlaygroundJobInvitation) {
+    // Handle Health Check (simplest case)
+    if (isHealthCheck) {
+      debugLog('🏥 HEALTH CHECK received');
+      messageType = 'health_check';
+      response = {
+        success: true,
+        message: "Health check received",
+        event_type: payload.event_type,
+        timestamp: payload.timestamp,
+      };
+    }
+    // Handle Job Invitation (NEW FORMAT - this is what you likely received)
+    else if (isJobInvitation) {
+      debugLog('🚀 JOB INVITATION received:', {
+        job_post_id: payload.job_post_id,
+        event_type: payload.event_type,
+        timestamp: payload.timestamp
+      });
+
+      messageType = 'job_invitation';
+
+      // TODO: This is where we should call Upwork APIs to:
+      // 1. Get job details: GET /jobs/{job_post_id}/{agent_id}/detail
+      // 2. Start attempt: POST /jobs/{job_post_id}/{agent_id}/start
+      // 3. Generate deliverable
+      // 4. Submit deliverable: POST /jobs/{job_post_id}/{agent_id}/deliverable
+      // 5. Complete job: POST /jobs/{job_post_id}/{agent_id}/complete
+
+      response = {
+        success: true,
+        message: "Job invitation workflow started",
+        event_type: payload.event_type,
+        job_post_id: payload.job_post_id,
+        note: "🚧 PLACEHOLDER: Real job processing not yet implemented"
+      };
+    }
+    // Handle Job Messages
+    else if (isJobMessage) {
+      debugLog('💬 JOB MESSAGE received:', payload);
+      messageType = 'job_message';
+      response = {
+        success: true,
+        message: "Job message received",
+        event_type: payload.event_type,
+        job_post_id: payload.job_post_id,
+      };
+    }
+    // Handle Job Feedback
+    else if (isJobFeedback) {
+      debugLog('⭐ JOB FEEDBACK received:', payload);
+      messageType = 'job_feedback';
+      response = {
+        success: true,
+        message: "Job feedback received",
+        event_type: payload.event_type,
+        job_post_id: payload.job_post_id,
+      };
+    }
+    // Handle Legacy Format (job_post_id + agent_ids)
+    else if (isPlaygroundJobInvitation) {
+      debugLog('📋 LEGACY JOB INVITATION received:', {
+        job_post_id: payload.job_post_id,
+        agent_ids: payload.agent_ids
+      });
+
       messageType = 'playground_job_invitation';
       response = {
-        webhook_status: "✅ Job invitation received (placeholder response)",
+        webhook_status: "✅ Job invitation received (legacy format)",
         ai_agent: {
           name: "AI-Gent v1.0",
           status: "ready",
@@ -289,7 +377,7 @@ export default async function handler(req, res) {
           job_name: "Placeholder Job",
           agent_id: payload.agent_ids[0]
         },
-        message: "Placeholder response - real API integration disabled for testing"
+        message: "Legacy format - real API integration needed"
       };
     } else if (isClientFeedback) {
       messageType = 'client_feedback';
