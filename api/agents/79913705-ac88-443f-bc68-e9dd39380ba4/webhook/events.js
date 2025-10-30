@@ -44,25 +44,30 @@ function verifySignature(payload, signature, secret, timestamp = null, requestId
     console.log('[SIGNATURE DEBUG] Upwork format payload:', upworkFormat);
   }
 
-  const expectedSignature = createHmac('sha256', secret)
+  const computedSignature = createHmac('sha256', secret)
     .update(upworkFormat, 'utf8')
     .digest('hex');
 
-  const providedSignature = signature.replace('sha256=', '');
+  const providedSignature = signature.substring(7); // Remove "sha256=" prefix
 
   if (debug) {
     console.log('[SIGNATURE DEBUG] Final comparison:', {
       providedSignature: providedSignature,
-      expectedSignature: expectedSignature,
-      signaturesMatch: providedSignature === expectedSignature,
+      computedSignature: computedSignature,
+      signaturesMatch: providedSignature === computedSignature,
       upworkFormatUsed: upworkFormat
     });
   }
 
-  return timingSafeEqual(
-    Buffer.from(expectedSignature, 'hex'),
-    Buffer.from(providedSignature, 'hex')
-  );
+  const providedBuffer = Buffer.from(providedSignature, 'hex');
+  const computedBuffer = Buffer.from(computedSignature, 'hex');
+
+  if (providedBuffer.length !== computedBuffer.length) {
+    if (debug) console.log('[SIGNATURE DEBUG] Length mismatch');
+    return false;
+  }
+
+  return timingSafeEqual(computedBuffer, providedBuffer);
 }
 
 function validateTimestamp(timestamp, maxAge = 120000) {
@@ -121,6 +126,13 @@ function checkRateLimit(origin, maxRequests, window) {
   return { allowed: true, remaining: maxRequests - data.count };
 }
 
+// Disable body parser to get raw body for signature verification
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+}
+
 export default async function handler(req, res) {
   const DEBUG = process.env.DEBUG === 'true';
 
@@ -131,7 +143,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const WEBHOOK_SECRET = process.env.UPWORK_WEBHOOK_SECRET;
+    const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
     const WHITELISTED_ORIGINS = process.env.WHITELISTED_ORIGINS?.split(',').map(origin => origin.trim()) || ['*'];
     const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW) || 60000;
     const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
@@ -145,7 +157,6 @@ export default async function handler(req, res) {
 
     debugLog('Handler invoked:', {
       method: req.method,
-      hasBody: !!req.body,
       originsCount: WHITELISTED_ORIGINS.length
     });
 
@@ -164,18 +175,32 @@ export default async function handler(req, res) {
       });
     }
 
+    // Read raw body for signature verification (bodyParser is disabled)
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const rawBody = Buffer.concat(chunks).toString('utf8');
+
     const signature = req.headers['x-up-signature'];
     const timestamp = req.headers['x-up-timestamp'];
     const requestId = req.headers['x-up-id'];
 
-    // For signature verification, we need the exact body Upwork sent
-    // Vercel parses JSON, so we reconstruct it consistently
-    const rawBody = JSON.stringify(req.body);
+    // Parse the JSON body for processing
+    let parsedBody;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Invalid JSON body'
+      });
+    }
 
     debugLog('Body info:', {
-      bodyType: typeof req.body,
+      bodyType: typeof parsedBody,
       bodyLength: rawBody.length,
-      bodyKeys: req.body ? Object.keys(req.body) : 'none',
+      bodyKeys: parsedBody ? Object.keys(parsedBody) : 'none',
       rawBodySample: rawBody.substring(0, 100)
     });
 
@@ -235,7 +260,7 @@ export default async function handler(req, res) {
     res.setHeader('X-RateLimit-Window', RATE_LIMIT_WINDOW);
 
     // Process payload
-    const payload = req.body;
+    const payload = parsedBody;
     if (!payload) {
       return res.status(400).json({
         error: 'Bad request',
