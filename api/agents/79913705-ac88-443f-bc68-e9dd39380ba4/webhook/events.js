@@ -27,6 +27,8 @@ async function getOAuthToken() {
 
   const formData = `grant_type=client_credentials&client_id=${encodeURIComponent(API_KEY)}&client_secret=${encodeURIComponent(API_SECRET)}`;
 
+  console.log('🔑 Making OAuth request to:', AUTH_URL);
+
   const response = await fetch(AUTH_URL, {
     method: 'POST',
     headers: {
@@ -35,8 +37,11 @@ async function getOAuthToken() {
     body: formData
   });
 
+  console.log('🔑 OAuth response status:', response.status, response.statusText);
+
   if (!response.ok) {
     const errorText = await response.text();
+    console.error('🔑 OAuth failed with response:', errorText);
     throw new Error(`OAuth failed: ${response.status} ${errorText}`);
   }
 
@@ -72,10 +77,13 @@ async function callUpworkAPI(endpoint, options = {}) {
 // Complete job processing workflow
 async function processJobInvitation(jobPostId, agentId, debugLog) {
   try {
+    console.log('🚀 STARTING JOB PROCESSING WORKFLOW:', { jobPostId, agentId });
     debugLog('🚀 Starting job processing workflow', { jobPostId, agentId });
 
     // Step 1: Get job details and attachments
+    console.log('📋 STEP 1: Getting job details for:', jobPostId);
     debugLog('📋 Step 1: Getting job details...');
+
     const jobDetails = await callUpworkAPI(`/jobs/${jobPostId}/${agentId}/detail`);
     debugLog('✅ Job details retrieved:', {
       jobName: jobDetails.job_name,
@@ -510,13 +518,22 @@ export default async function handler(req, res) {
         const agentId = '79913705-ac88-443f-bc68-e9dd39380ba4'; // Extract from route or config
 
         // Start job processing in background (don't await to respond quickly)
+        debugLog('🚀 About to start job processing for:', { jobId: payload.job_post_id, agentId });
+
         processJobInvitation(payload.job_post_id, agentId, debugLog)
           .then(result => {
             debugLog('🎉 Job processing completed successfully:', result);
+            console.log('✅ JOB COMPLETED SUCCESSFULLY:', result);
           })
           .catch(error => {
             debugLog('💥 Job processing failed:', error.message);
-            console.error('Job processing error:', error);
+            console.error('❌ JOB PROCESSING ERROR:', error);
+            console.error('❌ ERROR STACK:', error.stack);
+
+            // Try to log more details about the error
+            if (error.response) {
+              console.error('❌ API Response Error:', error.response.status, error.response.statusText);
+            }
           });
 
         // Return immediate response to Upwork
