@@ -11,23 +11,34 @@ const AUTH_URL = 'https://www.upwork.com/api/v3/oauth2/token';
 
 // Helper function to get fresh OAuth token
 async function getOAuthToken() {
+  console.log('🔑 [OAUTH] Starting OAuth token acquisition...');
+
   const API_KEY = process.env.PLAYGROUND_API_KEY || '88b9cea0d2d7f6accc0ad10713d85533';
   const API_SECRET = process.env.PLAYGROUND_API_SECRET || 'c384c89a33482846';
 
+  console.log('🔑 [OAUTH] API credentials loaded:', {
+    hasApiKey: !!API_KEY,
+    apiKeyLength: API_KEY?.length,
+    hasApiSecret: !!API_SECRET,
+    apiSecretLength: API_SECRET?.length
+  });
+
   if (!API_KEY || !API_SECRET) {
+    console.error('🔑 [OAUTH] ERROR: API credentials not configured');
     throw new Error('API credentials not configured');
   }
 
   // Check if we have a valid token
   if (jwtToken && tokenExpiry && Date.now() < tokenExpiry) {
+    console.log('🔑 [OAUTH] Using cached token (still valid)');
     return jwtToken;
   }
 
-  console.log('🔑 Getting fresh OAuth token...');
+  console.log('🔑 [OAUTH] Getting fresh OAuth token from:', AUTH_URL);
 
   const formData = `grant_type=client_credentials&client_id=${encodeURIComponent(API_KEY)}&client_secret=${encodeURIComponent(API_SECRET)}`;
 
-  console.log('🔑 Making OAuth request to:', AUTH_URL);
+  console.log('🔑 [OAUTH] Form data prepared, making request...');
 
   const response = await fetch(AUTH_URL, {
     method: 'POST',
@@ -37,56 +48,127 @@ async function getOAuthToken() {
     body: formData
   });
 
-  console.log('🔑 OAuth response status:', response.status, response.statusText);
+  console.log('🔑 [OAUTH] Response received:', {
+    status: response.status,
+    statusText: response.statusText,
+    headers: Object.fromEntries(response.headers.entries())
+  });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('🔑 OAuth failed with response:', errorText);
+    console.error('🔑 [OAUTH] ERROR: OAuth failed with response:', {
+      status: response.status,
+      statusText: response.statusText,
+      errorBody: errorText
+    });
     throw new Error(`OAuth failed: ${response.status} ${errorText}`);
   }
 
   const authData = await response.json();
+  console.log('🔑 [OAUTH] Auth data received:', {
+    hasAccessToken: !!authData.access_token,
+    tokenType: authData.token_type,
+    expiresIn: authData.expires_in,
+    scope: authData.scope
+  });
+
   jwtToken = authData.access_token;
   tokenExpiry = Date.now() + (authData.expires_in * 1000) - 60000; // Refresh 1 min early
 
-  console.log('✅ OAuth token acquired');
+  console.log('✅ [OAUTH] OAuth token acquired successfully');
+  console.log('🔑 [OAUTH] Token expires in:', authData.expires_in, 'seconds');
+  console.log('🔑 [OAUTH] Token expiry time:', new Date(tokenExpiry).toISOString());
+
   return jwtToken;
 }
 
 // Helper function to make authenticated API calls
 async function callUpworkAPI(endpoint, options = {}) {
-  const token = await getOAuthToken();
+  console.log('🌐 [API] Starting API call to:', endpoint);
+  console.log('🌐 [API] Call options:', {
+    method: options.method || 'GET',
+    hasBody: !!options.body,
+    bodyLength: options.body?.length,
+    customHeaders: Object.keys(options.headers || {})
+  });
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const token = await getOAuthToken();
+  console.log('🌐 [API] OAuth token obtained for API call');
+
+  const fullUrl = `${API_BASE}${endpoint}`;
+  console.log('🌐 [API] Full URL:', fullUrl);
+
+  const requestOptions = {
     ...options,
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...options.headers
     }
+  };
+
+  console.log('🌐 [API] Request headers:', {
+    hasAuthorization: !!requestOptions.headers.Authorization,
+    authorizationPrefix: requestOptions.headers.Authorization?.substring(0, 20) + '...',
+    contentType: requestOptions.headers['Content-Type'],
+    allHeaders: Object.keys(requestOptions.headers)
+  });
+
+  console.log('🌐 [API] Making request...');
+
+  const response = await fetch(fullUrl, requestOptions);
+
+  console.log('🌐 [API] Response received:', {
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    headers: Object.fromEntries(response.headers.entries())
   });
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error('🌐 [API] ERROR: API call failed:', {
+      endpoint,
+      status: response.status,
+      statusText: response.statusText,
+      errorBody: errorText
+    });
     throw new Error(`API call failed: ${response.status} ${errorText}`);
   }
 
-  return response.json();
+  const responseData = await response.json();
+  console.log('🌐 [API] Response data received:', {
+    hasData: !!responseData,
+    dataKeys: responseData ? Object.keys(responseData) : [],
+    dataPreview: responseData ? JSON.stringify(responseData).substring(0, 200) + '...' : 'no data'
+  });
+
+  console.log('✅ [API] API call completed successfully');
+  return responseData;
 }
 
 // Complete job processing workflow
 async function processJobInvitation(jobPostId, agentId, debugLog) {
   try {
-    console.log('🚀 STARTING JOB PROCESSING WORKFLOW:', { jobPostId, agentId });
+    console.log('🚀 [JOB] ==================== STARTING JOB PROCESSING WORKFLOW ====================');
+    console.log('🚀 [JOB] Input parameters:', { jobPostId, agentId });
+    console.log('🚀 [JOB] Timestamp:', new Date().toISOString());
     debugLog('🚀 Starting job processing workflow', { jobPostId, agentId });
 
     // Step 1: Get job details and attachments
-    console.log('📋 STEP 1: Getting job details for:', jobPostId);
-    console.log('📋 Making API call to:', `/jobs/${jobPostId}/${agentId}/detail`);
+    console.log('📋 [JOB] ==================== STEP 1: GET JOB DETAILS ====================');
+    console.log('📋 [JOB] Job Post ID:', jobPostId);
+    console.log('📋 [JOB] Agent ID:', agentId);
+    console.log('📋 [JOB] Endpoint will be:', `/jobs/${jobPostId}/${agentId}/detail`);
     debugLog('📋 Step 1: Getting job details...');
 
+    console.log('📋 [JOB] About to call Upwork API for job details...');
     const jobDetails = await callUpworkAPI(`/jobs/${jobPostId}/${agentId}/detail`);
-    console.log('📋 Job details response received:', jobDetails);
+
+    console.log('📋 [JOB] Job details API call completed!');
+    console.log('📋 [JOB] Full job details response:');
+    console.log('📋 [JOB]', JSON.stringify(jobDetails, null, 2));
+
     debugLog('✅ Job details retrieved:', {
       jobName: jobDetails.job_name,
       hasAttachments: jobDetails.attachments?.length > 0,
@@ -94,60 +176,86 @@ async function processJobInvitation(jobPostId, agentId, debugLog) {
     });
 
     // Step 2: Start job attempt
-    console.log('🏁 STEP 2: Starting job attempt');
-    console.log('🏁 Making API call to:', `/jobs/${jobPostId}/${agentId}/start`);
+    console.log('🏁 [JOB] ==================== STEP 2: START JOB ATTEMPT ====================');
+    console.log('🏁 [JOB] Endpoint will be:', `/jobs/${jobPostId}/${agentId}/start`);
     debugLog('🏁 Step 2: Starting job attempt...');
 
+    console.log('🏁 [JOB] About to call Upwork API to start job attempt...');
     const startResponse = await callUpworkAPI(`/jobs/${jobPostId}/${agentId}/start`, {
       method: 'POST',
       body: JSON.stringify({
         explanation: "Starting work on this job with AI-Gent v1.0"
       })
     });
-    console.log('🏁 Job attempt started, response:', startResponse);
+
+    console.log('🏁 [JOB] Job attempt started successfully!');
+    console.log('🏁 [JOB] Start response:', JSON.stringify(startResponse, null, 2));
     debugLog('✅ Job attempt started:', startResponse);
 
     // Step 3: Generate deliverable content (AI logic would go here)
-    console.log('🤖 STEP 3: Generating deliverable content');
+    console.log('🤖 [JOB] ==================== STEP 3: GENERATE DELIVERABLE ====================');
     debugLog('🤖 Step 3: Generating deliverable content...');
+
+    console.log('🤖 [JOB] Generating deliverable content based on job details...');
     const deliverableContent = generateDeliverableContent(jobDetails);
-    console.log('🤖 Generated content length:', deliverableContent.length, 'characters');
+    console.log('🤖 [JOB] Generated content length:', deliverableContent.length, 'characters');
+    console.log('🤖 [JOB] Content preview:', deliverableContent.substring(0, 200) + '...');
 
     // Create deliverable file
+    console.log('📁 [JOB] Creating deliverable file blob...');
     const deliverableBlob = new Blob([deliverableContent], { type: 'text/plain' });
     const formData = new FormData();
     formData.append('files', deliverableBlob, 'deliverable.txt');
+    console.log('📁 [JOB] FormData prepared for file upload');
 
     // Step 4: Submit deliverable
-    console.log('📤 STEP 4: Submitting deliverable');
-    console.log('📤 Making API call to:', `/jobs/${jobPostId}/${agentId}/deliverable`);
+    console.log('📤 [JOB] ==================== STEP 4: SUBMIT DELIVERABLE ====================');
+    console.log('📤 [JOB] Endpoint will be:', `/jobs/${jobPostId}/${agentId}/deliverable`);
     debugLog('📤 Step 4: Submitting deliverable...');
 
-    const deliverableResponse = await fetch(`${API_BASE}/jobs/${jobPostId}/${agentId}/deliverable`, {
+    console.log('📤 [JOB] Getting fresh OAuth token for deliverable upload...');
+    const uploadToken = await getOAuthToken();
+    console.log('📤 [JOB] Token obtained for upload');
+
+    const deliverableUrl = `${API_BASE}/jobs/${jobPostId}/${agentId}/deliverable`;
+    console.log('📤 [JOB] Full deliverable URL:', deliverableUrl);
+
+    console.log('📤 [JOB] Making deliverable upload request...');
+    const deliverableResponse = await fetch(deliverableUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${await getOAuthToken()}`
+        'Authorization': `Bearer ${uploadToken}`
       },
       body: formData
     });
 
-    console.log('📤 Deliverable response status:', deliverableResponse.status, deliverableResponse.statusText);
+    console.log('📤 [JOB] Deliverable upload response received:', {
+      status: deliverableResponse.status,
+      statusText: deliverableResponse.statusText,
+      ok: deliverableResponse.ok
+    });
 
     if (!deliverableResponse.ok) {
       const errorText = await deliverableResponse.text();
-      console.log('📤 Deliverable submission failed:', errorText);
+      console.error('📤 [JOB] ERROR: Deliverable submission failed:', {
+        status: deliverableResponse.status,
+        statusText: deliverableResponse.statusText,
+        errorBody: errorText
+      });
       throw new Error(`Deliverable submission failed: ${deliverableResponse.status} ${errorText}`);
     }
 
     const deliverableResult = await deliverableResponse.json();
-    console.log('📤 Deliverable submitted successfully:', deliverableResult);
+    console.log('📤 [JOB] Deliverable submitted successfully!');
+    console.log('📤 [JOB] Deliverable result:', JSON.stringify(deliverableResult, null, 2));
     debugLog('✅ Deliverable submitted:', deliverableResult);
 
     // Step 5: Complete the job
-    console.log('🎯 STEP 5: Completing job');
-    console.log('🎯 Making API call to:', `/jobs/${jobPostId}/${agentId}/complete`);
+    console.log('🎯 [JOB] ==================== STEP 5: COMPLETE JOB ====================');
+    console.log('🎯 [JOB] Endpoint will be:', `/jobs/${jobPostId}/${agentId}/complete`);
     debugLog('🎯 Step 5: Completing job...');
 
+    console.log('🎯 [JOB] About to call Upwork API to complete job...');
     const completeResponse = await callUpworkAPI(`/jobs/${jobPostId}/${agentId}/complete`, {
       method: 'POST',
       body: JSON.stringify({
@@ -155,17 +263,29 @@ async function processJobInvitation(jobPostId, agentId, debugLog) {
         fixed_price: null // Optional pricing
       })
     });
-    console.log('🎯 Job completed successfully:', completeResponse);
+
+    console.log('🎯 [JOB] Job completion API call finished!');
+    console.log('🎯 [JOB] Completion response:', JSON.stringify(completeResponse, null, 2));
     debugLog('✅ Job completed:', completeResponse);
 
-    return {
+    const finalResult = {
       success: true,
       jobDetails,
       deliverableSize: deliverableContent.length,
       completedAt: new Date().toISOString()
     };
 
+    console.log('🎉 [JOB] ==================== JOB PROCESSING COMPLETED SUCCESSFULLY ====================');
+    console.log('🎉 [JOB] Final result:', JSON.stringify(finalResult, null, 2));
+
+    return finalResult;
+
   } catch (error) {
+    console.error('💥 [JOB] ==================== JOB PROCESSING FAILED ====================');
+    console.error('💥 [JOB] Error message:', error.message);
+    console.error('💥 [JOB] Error stack:', error.stack);
+    console.error('💥 [JOB] Full error object:', error);
+
     debugLog('❌ Job processing failed:', error.message);
     throw error;
   }
@@ -232,30 +352,30 @@ function isOriginWhitelisted(origin, whitelistedOrigins) {
 }
 
 function verifySignature(payload, signature, secret, timestamp = null, requestId = null, debug = false) {
-  if (debug) {
-    console.log('[SIGNATURE DEBUG] Input params:', {
-      payload: payload,
-      signature: signature,
-      secret: secret,
-      payloadType: typeof payload,
-      signatureType: typeof signature,
-      secretType: typeof secret,
-      payloadBytes: Buffer.from(payload, 'utf8').length,
-      payloadEncoding: Buffer.from(payload, 'utf8').toString('hex').substring(0, 32) + '...'
-    });
-  }
+  // if (debug) {
+  //   console.log('[SIGNATURE DEBUG] Input params:', {
+  //     payload: payload,
+  //     signature: signature,
+  //     secret: secret,
+  //     payloadType: typeof payload,
+  //     signatureType: typeof signature,
+  //     secretType: typeof secret,
+  //     payloadBytes: Buffer.from(payload, 'utf8').length,
+  //     payloadEncoding: Buffer.from(payload, 'utf8').toString('hex').substring(0, 32) + '...'
+  //   });
+  // }
 
   if (!signature || !secret) {
-    if (debug) console.log('[SIGNATURE DEBUG] Missing signature or secret');
+    // if (debug) console.log('[SIGNATURE DEBUG] Missing signature or secret');
     return false;
   }
 
   // According to Upwork docs: raw_payload = f"{x_up_id}.{x_up_timestamp}.{body_str}"
   const upworkFormat = `${requestId}.${timestamp}.${payload}`;
 
-  if (debug) {
-    console.log('[SIGNATURE DEBUG] Upwork format payload:', upworkFormat);
-  }
+  // if (debug) {
+  //   console.log('[SIGNATURE DEBUG] Upwork format payload:', upworkFormat);
+  // }
 
   const computedSignature = createHmac('sha256', secret)
     .update(upworkFormat, 'utf8')
@@ -263,14 +383,14 @@ function verifySignature(payload, signature, secret, timestamp = null, requestId
 
   const providedSignature = signature.substring(7); // Remove "sha256=" prefix
 
-  if (debug) {
-    console.log('[SIGNATURE DEBUG] Final comparison:', {
-      providedSignature: providedSignature,
-      computedSignature: computedSignature,
-      signaturesMatch: providedSignature === computedSignature,
-      upworkFormatUsed: upworkFormat
-    });
-  }
+  // if (debug) {
+  //   console.log('[SIGNATURE DEBUG] Final comparison:', {
+  //     providedSignature: providedSignature,
+  //     computedSignature: computedSignature,
+  //     signaturesMatch: providedSignature === computedSignature,
+  //     upworkFormatUsed: upworkFormat
+  //   });
+  // }
 
   const providedBuffer = Buffer.from(providedSignature, 'hex');
   const computedBuffer = Buffer.from(computedSignature, 'hex');
@@ -567,25 +687,34 @@ export default async function handler(req, res) {
         const agentId = '79913705-ac88-443f-bc68-e9dd39380ba4'; // Extract from route or config
 
         // Start job processing in background (don't await to respond quickly)
-        console.log('🚀 ABOUT TO START JOB PROCESSING - ALWAYS VISIBLE');
-        console.log('Job ID:', payload.job_post_id);
-        console.log('Agent ID:', agentId);
+        console.log('🚀 [WEBHOOK] ==================== INITIATING JOB PROCESSING ====================');
+        console.log('🚀 [WEBHOOK] Job Post ID:', payload.job_post_id);
+        console.log('🚀 [WEBHOOK] Agent ID:', agentId);
+        console.log('🚀 [WEBHOOK] Processing will start immediately after webhook response');
         debugLog('🚀 About to start job processing for:', { jobId: payload.job_post_id, agentId });
 
         processJobInvitation(payload.job_post_id, agentId, debugLog)
           .then(result => {
+            console.log('✅ [WEBHOOK] ==================== BACKGROUND JOB PROCESSING COMPLETED ====================');
+            console.log('✅ [WEBHOOK] Job processing completed successfully!');
+            console.log('✅ [WEBHOOK] Final result summary:', result);
             debugLog('🎉 Job processing completed successfully:', result);
-            console.log('✅ JOB COMPLETED SUCCESSFULLY:', result);
           })
           .catch(error => {
-            debugLog('💥 Job processing failed:', error.message);
-            console.error('❌ JOB PROCESSING ERROR:', error);
-            console.error('❌ ERROR STACK:', error.stack);
+            console.error('❌ [WEBHOOK] ==================== BACKGROUND JOB PROCESSING FAILED ====================');
+            console.error('❌ [WEBHOOK] Job processing failed with error:', error.message);
+            console.error('❌ [WEBHOOK] Error details:', {
+              name: error.name,
+              message: error.message,
+              stack: error.stack
+            });
 
             // Try to log more details about the error
             if (error.response) {
-              console.error('❌ API Response Error:', error.response.status, error.response.statusText);
+              console.error('❌ [WEBHOOK] API Response Error:', error.response.status, error.response.statusText);
             }
+
+            debugLog('💥 Job processing failed:', error.message);
           });
 
         // Return immediate response to Upwork
