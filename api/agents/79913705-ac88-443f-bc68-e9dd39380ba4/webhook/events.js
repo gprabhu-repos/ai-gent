@@ -674,7 +674,8 @@ export default async function handler(req, res) {
           fullUrl: req.url,
           urlParts: urlParts,
           agentIdIndex: agentIdIndex,
-          extractedAgentId: agentId
+          extractedAgentId: agentId,
+          agentsFoundAt: urlParts.indexOf('agents')
         });
 
         if (!agentId) {
