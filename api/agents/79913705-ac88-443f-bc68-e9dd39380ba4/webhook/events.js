@@ -156,7 +156,22 @@ export default async function handler(req, res) {
     const signature = req.headers['x-up-signature'];
     const timestamp = req.headers['x-up-timestamp'];
     const requestId = req.headers['x-up-id'];
-    const rawBody = JSON.stringify(req.body);
+
+    // Get raw body for signature verification
+    let rawBody;
+    if (req.rawBody) {
+      rawBody = req.rawBody;
+    } else if (typeof req.body === 'string') {
+      rawBody = req.body;
+    } else {
+      rawBody = JSON.stringify(req.body);
+    }
+
+    debugLog('Body info:', {
+      hasRawBody: !!req.rawBody,
+      bodyType: typeof req.body,
+      bodyLength: rawBody.length
+    });
 
     debugLog('Webhook headers:', {
       signature: signature ? signature.substring(0, 20) + '...' : 'missing',
